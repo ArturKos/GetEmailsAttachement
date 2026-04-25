@@ -1,60 +1,64 @@
 # GetEmailsAttachement
 
-![C](https://img.shields.io/badge/C-00599C?style=flat&logo=c&logoColor=white)
+![C](https://img.shields.io/badge/C-11-00599C?style=flat&logo=c&logoColor=white)
+![CMake](https://img.shields.io/badge/build-CMake-064F8C?style=flat&logo=cmake&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-GoogleTest-4CAF50?style=flat)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?style=flat&logo=linux&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
 
-POP3 email client that connects to a mail server, retrieves all messages, parses MIME structure, and automatically extracts file attachments. Built on raw BSD sockets with a hand-rolled POP3 protocol and MIME parser.
+## What is it
 
-## Features
+A small POP3 mail client written in C that connects to a mail server, downloads every message in the mailbox, parses MIME multipart bodies, and writes each attachment to disk under its original filename. No external mail library — just BSD sockets and a hand-rolled protocol.
 
-- **Raw socket POP3 implementation** -- communicates with POP3 servers on port 110 using POSIX sockets (`socket`, `connect`, `send`, `recv`) with no external mail library
-- **Full mailbox retrieval** -- enumerates messages via `UIDL`, then downloads each with `RETR` and writes raw content to temporary files for processing
-- **MIME boundary parsing** -- detects `boundary=` headers in multipart messages to correctly delimit individual MIME parts
-- **Automatic attachment extraction** -- locates `filename=` headers within MIME parts, extracts the Base64-encoded body, and decodes it via an external `b64decode` utility
-- **Multi-attachment support** -- iterates through all MIME boundaries in a message, extracting every attachment found
-- **Keepalive via NOP** -- sends `NOP` commands to maintain the server connection during long operations
+## Why it is interesting
 
-## Dependencies
+- **Plain BSD sockets + `getaddrinfo`** — IPv4/IPv6-aware connection setup on top of `socket(2)`, `connect(2)`, `send(2)`, `recv(2)`. No `gethostbyname`.
+- **POP3 protocol from scratch** — `USER`, `PASS`, `UIDL`, `RETR`, `QUIT`, with proper handling of multi-line responses terminated by `"\r\n.\r\n"`.
+- **MIME multipart parsing** — boundary detection, `filename=` extraction with path-traversal sanitization, header-line skipping.
+- **In-tree Base64 decoder** — RFC 4648 implementation; no `system()` shell-out.
+- **Hermetic test suite** — GoogleTest + a loopback fake POP3 server on an ephemeral port, plus RFC 4648 vectors and end-to-end MIME fixtures.
+- **Modern toolchain** — CMake (≥3.14), `-Wall -Wextra -Wpedantic` clean, GoogleTest via `FetchContent`, Doxygen on the public API.
 
-| Dependency | Purpose |
-|---|---|
-| GCC | C compiler |
-| POSIX sockets (`arpa/inet.h`, `netinet/in.h`) | Network communication |
-| `netdb.h` | DNS hostname resolution |
-| `b64decode` | External Base64 decoding utility (expected in `PATH` or working directory) |
-
-## Build and Run
+## Build and run
 
 ```bash
-gcc mymime.c -o mymime
-./mymime <server_address> <username> <password>
+cmake -S . -B build
+cmake --build build
+./build/get_emails_attachement <server_host> <username> <password>
 ```
 
-Example:
+Run the test suite:
 
 ```bash
-./mymime pop3.example.com john.doe secretpass
+ctest --test-dir build --output-on-failure
 ```
 
-Extracted attachments are saved to the current working directory with their original filenames.
+Generate API docs:
 
-## Project Structure
+```bash
+doxygen docs/Doxyfile
+# open docs/build/html/index.html
+```
+
+## Project layout
 
 ```
 GetEmailsAttachement/
-  mymime.c       # Main entry point -- argument parsing, connection orchestration
-  mymime.h       # POP3 protocol, MIME parsing, and attachment extraction functions
-  build           # Build helper script
+├── CMakeLists.txt           # Build + GoogleTest via FetchContent
+├── include/
+│   ├── base64.h             # RFC 4648 decoder API
+│   ├── mime_parser.h        # boundary / filename / attachment extraction
+│   └── pop3_client.h        # connect, login, fetch, quit
+├── src/
+│   ├── base64.c
+│   ├── main.c               # thin entry point: arg parsing + orchestration
+│   ├── mime_parser.c
+│   └── pop3_client.c
+├── tests/
+│   ├── test_base64.cpp      # RFC vectors + edge cases
+│   ├── test_mime_parser.cpp # header parsing + end-to-end attachment extraction
+│   └── test_pop3_client.cpp # loopback fake-server protocol tests
+├── docs/
+│   └── Doxyfile             # public-API documentation
+└── README.md
 ```
-
-## How It Works
-
-1. A TCP socket connects to port 110 of the specified POP3 server.
-2. The client authenticates with `USER` / `PASS` commands.
-3. `UIDL` retrieves the unique ID listing to determine the message count.
-4. Each message is downloaded via `RETR` and saved to a temporary file.
-5. The MIME parser scans for `boundary=` to identify multipart sections.
-6. Within each section, `filename=` headers identify attachments.
-7. Base64-encoded attachment bodies are written to a temporary file and decoded using `b64decode`.
-8. The decoded file is saved under its original filename; temporary files are cleaned up.

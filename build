@@ -1,2 +1,0 @@
-#!/bin/bash
-gcc mymime.c  -o mymime
